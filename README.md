@@ -1,2 +1,2 @@
 # MLClassification
-Dauphine's ML project of classification on public data's socio-economic indicators
+Dauphine's ML project of classification on  socio-economic public data
