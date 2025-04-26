@@ -22,6 +22,8 @@ def evaluate_model(data_proc, model_name):
         y_pred = (y_proba >= 0.5).astype(int)
     plot_metrics(data_proc.status, y_true, y_pred, y_proba)
 
+
+
 def evaluate_multi_model(data_proc_list, model_name):
     y_true = np.concatenate(
         list(map(
@@ -47,6 +49,8 @@ def evaluate_multi_model(data_proc_list, model_name):
         )
         y_pred = (y_proba >= 0.5).astype(int)
     plot_metrics("All data_procs", y_true, y_pred, y_proba)
+
+
 
 def plot_metrics(experience_name, y_true, y_pred, y_proba):
     
@@ -90,6 +94,88 @@ def plot_metrics(experience_name, y_true, y_pred, y_proba):
     plt.tight_layout()
     plt.show()
 
+
+def plot_loss(data_proc_lst, model_name):
+    fig, ax = plt.subplots(1, 3, figsize=(18, 5))  # 1 ligne, 3 colonnes
+    
+    for i, data_proc in enumerate(data_proc_lst):
+        evals_result = data_proc.evals_results[model_name]
+        
+        try:
+            # Pour XGBoost
+            epochs = len(evals_result['train']['logloss'])
+            df_loss = pd.DataFrame({
+                'Epoch': list(range(epochs)),
+                'Train': evals_result['train']['logloss'],
+                'Validation': evals_result['validation']['logloss']
+            })
+        except KeyError:
+            try:
+                # Pour CatBoost
+                epochs = len(evals_result['learn']['Logloss'])
+                df_loss = pd.DataFrame({
+                    'Epoch': list(range(epochs)),
+                    'Train': evals_result['learn']['Logloss'],
+                    'Validation': evals_result['validation']['Logloss']
+                })
+            except KeyError:
+                raise ValueError(f"Unsupported evals_result format for model {model_name}")
+
+        # Format long pour seaborn
+        df_loss_melted = df_loss.melt(id_vars='Epoch', value_vars=['Train', 'Validation'], var_name='set', value_name='logloss')
+
+        # Tracer dans le subplot correspondant
+        sns.lineplot(data=df_loss_melted, x='Epoch', y='logloss', hue='set', ax=ax[i])
+        ax[i].set_title(f'Loss pendant le training - [{data_proc.status}]', fontsize=14)
+        ax[i].set_xlabel('Epoch')
+        ax[i].set_ylabel('Logloss')
+        ax[i].grid(True)
+
+    plt.tight_layout()
+    plt.show()
+    
+
+def plot_importance_xgb(data_proc):
+
+    _, ax = plt.subplots(1, 2, figsize=(12, 6)) 
+
+    booster = data_proc.models["xgboost"]
+    importance_dict = booster.get_score(importance_type='gain')  # importance par 'gain'
+    feature_names = data_proc.feature_names
+
+    importance_df = pd.DataFrame({
+        'Feature': [feature_names[i] for i in range(len(feature_names))],
+        'Importance': [importance_dict.get(f'f{i}', 0) for i in range(len(feature_names))]
+    })
+
+    importance_df['innit_feature'] = importance_df['Feature'].apply(lambda x: x.split('_')[0])
+
+    # 2. Grouper par "variable_initiale" et calculer les stats
+    df_grouped = importance_df.groupby('innit_feature')['Importance'].agg(['mean', 'median', 'max']).reset_index()
+
+
+    importance_mean_df = df_grouped.sort_values(by="mean", ascending=False).head(30)
+    sns.barplot(x='mean', y='innit_feature', data=importance_mean_df, hue='innit_feature', palette='viridis', ax=ax[0])
+    ax[0].set_title('Importance des Features moyennes (XGBoost)', fontsize=16)
+    ax[0].set_xlabel('Gain moyen', fontsize=14)
+    ax[0].set_ylabel('Feature', fontsize=14)
+
+    importance_df = importance_df.sort_values(by="Importance", ascending=False).head(30)
+    sns.barplot(x='Importance', y='Feature', data=importance_df, hue='innit_feature', palette='husl', ax=ax[1])
+    ax[1].set_title('Importance des modalitées (OHE) (XGBoost)', fontsize=16)
+    ax[1].set_xlabel('Gain', fontsize=14)
+    ax[1].set_ylabel('Modalité', fontsize=14)
+
+    # importance_median_df = df_grouped.sort_values(by="median", ascending=False).head(30)
+    # sns.barplot(x='median', y='innit_feature', data=importance_median_df, hue='innit_feature', palette='viridis', ax=ax[0])
+    # ax[0].set_title('Importance des Features max (XGBoost)', fontsize=16)
+    # ax[0].set_xlabel('Gain moyen', fontsize=14)
+    # ax[0].set_ylabel('Feature', fontsize=14)
+
+    plt.tight_layout()
+    plt.show()
+
+
 def summarize_categoricals(df: pd.DataFrame, show_levels=False):
     data = [[
         df[c].unique(), len(df[c].unique()), df[c].isnull().sum(),
@@ -98,3 +184,5 @@ def summarize_categoricals(df: pd.DataFrame, show_levels=False):
     df_temp = pd.DataFrame(data, index=df.columns,
                         columns=['Levels', 'No. of Levels', 'No. of Missing Values', '% empty', 'type'])
     return df_temp.iloc[:, 0 if show_levels else 1:]
+
+
